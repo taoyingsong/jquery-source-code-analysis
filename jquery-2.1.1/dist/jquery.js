@@ -15,6 +15,8 @@
 (function( global, factory ) {
 
 	if ( typeof module === "object" && typeof module.exports === "object" ) {
+		// 对于CommonJS和CommonJS-like的环境，执行factory得到jQuery。
+		// 如果global中存在document，直接调用factory并传递global，否则返回function尝试用function参数判断，最后也返回factory。
 		// For CommonJS and CommonJS-like environments where a proper window is present,
 		// execute the factory and get jQuery
 		// For environments that do not inherently posses a window with a document
@@ -70,10 +72,17 @@ var
 	version = "2.1.1",
 
 	// Define a local copy of jQuery
+	// 对于 jQuery对象或者说函数或者说构造器
+	// 静态方法挂在jQuery构造器上
+	// 实例方法挂在jQuery.fn.init上
+	// jQuery.fn.init.prototype = jQuery.fn，实例的原型又指向了jQuery的原型，这里搜【init.prototype】就能搜到代码
 	jQuery = function( selector, context ) {
 		// The jQuery object is actually just the init constructor 'enhanced'
 		// Need init if jQuery is called (just allow error to be thrown if not included)
-		return new jQuery.fn.init( selector, context );
+		// javascript可以通过操作符new来充当类的构造器。
+		// jquery之所以不用new就是因为这个new的存在。这里new jquery的原型做构造器而不是直接new jQeury是为了避免用户在使用时new jQuery造成无限循环。
+		// 所以通过下边操作后，this就是jquery的原型对象了。如果外部 new jQuery，this 就是jQeury对象，此时可以链式调用到jQuery对象的原型。
+		return new jQuery.fn.init( selector, context ); 
 	},
 
 	// Support: Android<4.1
@@ -107,29 +116,29 @@ jQuery.fn = jQuery.prototype = {
 
 	// Get the Nth element in the matched element set OR
 	// Get the whole matched element set as a clean array
-	get: function( num ) {
+	get: function( num ) { // 注意这里返回的三行加在一起是一个条件语句
 		return num != null ?
 
-			// Return just the one element from the set
+			// Return just the one element from the set 返回元素或者undefined（当num过大或者过小时）
 			( num < 0 ? this[ num + this.length ] : this[ num ] ) :
 
-			// Return all the elements in a clean array
+			// Return all the elements in a clean array 返回[]
 			slice.call( this );
 	},
 
 	// Take an array of elements and push it onto the stack
 	// (returning the new matched element set)
-	pushStack: function( elems ) {
+	pushStack: function( elems ) { // 可以结合下边this.pushStack()调用的地方看，比如find: function(....
 
 		// Build a new jQuery matched element set
-		var ret = jQuery.merge( this.constructor(), elems );
+		var ret = jQuery.merge( this.constructor(), elems ); // this.constructor即实例的constructor即jQuery，this.constructor()即创建新的jQuery对象。
 
 		// Add the old object onto the stack (as a reference)
-		ret.prevObject = this;
+		ret.prevObject = this; // 这里的this，即调用这个方法的对象，即选择器选中的对象。所以调用end()时执行end()中的this.prevObject 可以返回this（即返回本方法新构造的ret对象的上一个对象）
 		ret.context = this.context;
 
 		// Return the newly-formed element set
-		return ret;
+		return ret; // 返回上边新构造的jQuery对象
 	},
 
 	// Execute a callback for every element in the matched set.
@@ -145,7 +154,7 @@ jQuery.fn = jQuery.prototype = {
 		}));
 	},
 
-	slice: function() {
+	slice: function() { // 封装原生的slice方法, 先用原生的slice复制需要的数组数据，然后调用this.pushStack把其封装成jQuery对象
 		return this.pushStack( slice.apply( this, arguments ) );
 	},
 
@@ -157,14 +166,14 @@ jQuery.fn = jQuery.prototype = {
 		return this.eq( -1 );
 	},
 
-	eq: function( i ) {
+	eq: function( i ) { // 和eq的区别是返回的是jQuery对象，get返回的是dom元素
 		var len = this.length,
-			j = +i + ( i < 0 ? len : 0 );
+			j = +i + ( i < 0 ? len : 0 ); // +i: js语法的一种特殊写法，+运算符后面，会把字符串格式的i转换成数值类型。eg: "23" -> 23; "23fsf" -> NaN;
 		return this.pushStack( j >= 0 && j < len ? [ this[j] ] : [] );
 	},
 
-	end: function() {
-		return this.prevObject || this.constructor(null);
+	end: function() { // end方法就是回溯到上一个Dom合集,调用一次只回溯一层,因此对于链式操作与优化，这个方法还是很有意义的。
+		return this.prevObject || this.constructor(null); // 回溯到prevObject或者构造器
 	},
 
 	// For internal use only.
@@ -174,6 +183,13 @@ jQuery.fn = jQuery.prototype = {
 	splice: arr.splice
 };
 
+/**
+ * extend的用法：
+ * 1、浅拷贝扩展对象 jQuery.extend( target [, object1 ] [, objectN ] )
+ * 2、深拷贝扩展对象 jQuery.extend( [deep ], target, object1 [, objectN ] )
+ * 3、$.extend(src)：将src合并到jQuery全局对象（jQuery构造器）中去。
+ * 	  $.fn.extend(src)：将src合并到jQuery的实例对象（jQuery的原型）中去。
+ */
 jQuery.extend = jQuery.fn.extend = function() {
 	var options, name, src, copy, copyIsArray, clone,
 		target = arguments[0] || {},
@@ -196,8 +212,8 @@ jQuery.extend = jQuery.fn.extend = function() {
 	}
 
 	// extend jQuery itself if only one argument is passed
-	if ( i === length ) {
-		target = this;
+	if ( i === length ) { // 如果只有一个参数就是上边3的情况，一个参数时在绑定this，在下边进行赋值操作
+		target = this; // 这里this指向为jQuery对象（扩展的构造器方法）或者jQuery.fn对象（扩展的实例方法），谁调用的extend，this指向谁
 		i--;
 	}
 
@@ -229,7 +245,7 @@ jQuery.extend = jQuery.fn.extend = function() {
 
 				// Don't bring in undefined values
 				} else if ( copy !== undefined ) {
-					target[ name ] = copy;
+					target[ name ] = copy; // 覆盖拷贝，1、2对象属性有覆盖的情况
 				}
 			}
 		}
@@ -342,23 +358,23 @@ jQuery.extend({
 		return elem.nodeName && elem.nodeName.toLowerCase() === name.toLowerCase();
 	},
 
-	// args is for internal usage only
+	// args is for internal usage only. args仅供内部使用。
 	each: function( obj, callback, args ) {
 		var value,
 			i = 0,
 			length = obj.length,
 			isArray = isArraylike( obj );
 
-		if ( args ) {
-			if ( isArray ) {
+		if ( args ) { // 有args参数
+			if ( isArray ) { // obj 为数组
 				for ( ; i < length; i++ ) {
 					value = callback.apply( obj[ i ], args );
 
-					if ( value === false ) {
+					if ( value === false ) { // 如果callback的返回value为false，中断退出。
 						break;
 					}
 				}
-			} else {
+			} else { // obj 为对象
 				for ( i in obj ) {
 					value = callback.apply( obj[ i ], args );
 
@@ -526,7 +542,7 @@ jQuery.extend({
 	support: support
 });
 
-// Populate the class2type map
+// Populate the class2type map 迭代器除了单纯的遍历，在jQuery内部的运用最多的就是接口的抽象合并，相同功能的代码功能合并处理
 jQuery.each("Boolean Number String Function Array Date RegExp Object Error".split(" "), function(i, name) {
 	class2type[ "[object " + name + "]" ] = name.toLowerCase();
 });
@@ -2655,7 +2671,7 @@ jQuery.fn.extend({
 			self = this;
 
 		if ( typeof selector !== "string" ) {
-			return this.pushStack( jQuery( selector ).filter(function() {
+			return this.pushStack( jQuery( selector ).filter(function() { // this.pushStack就是选择器的堆栈操作
 				for ( i = 0; i < len; i++ ) {
 					if ( jQuery.contains( self[ i ], this ) ) {
 						return true;
@@ -2710,7 +2726,9 @@ var rootjQuery,
 
 		// HANDLE: $(""), $(null), $(undefined), $(false)
 		if ( !selector ) {
-			return this;
+			// 返回的是jQuery.fn即jQuery.prototype。
+			// new jQuery.fn.init()时创建构造函数，构造函数默认返回this,所以这个其实没用。这个其实作用于非new的init调用。
+			return this; 
 		}
 
 		// Handle HTML strings
@@ -3407,6 +3425,11 @@ function completed() {
 	jQuery.ready();
 }
 
+/**
+ *  jQuery 处理文档加载时机的问题
+ *
+ * 【$(document).ready(function(){}) -> 简写 $(function(){})】 早于 【DOMContentLoaded事件】 早于 【$(document).load(function(){}) 或者说 load事件】
+ */
 jQuery.ready.promise = function( obj ) {
 	if ( !readyList ) {
 
@@ -4716,6 +4739,8 @@ jQuery.Event.prototype = {
 
 // Create mouseenter/leave events using mouseover/out and event-time checks
 // Support: Chrome 15+
+// 迭代器除了单纯的遍历，在jQuery内部的运用最多的就是接口的抽象合并，相同功能的代码功能合并处理。
+// 针对相同的功能，节约了大量的代码空间。
 jQuery.each({
 	mouseenter: "mouseover",
 	mouseleave: "mouseout",
@@ -9129,7 +9154,7 @@ jQuery.fn.size = function() {
 	return this.length;
 };
 
-jQuery.fn.andSelf = jQuery.fn.addBack;
+jQuery.fn.andSelf = jQuery.fn.addBack; // andSelf现在是.addBack()的一个别名。在jQuery1.8和更高版本中应使用.addBack()
 
 
 
@@ -9155,24 +9180,24 @@ if ( typeof define === "function" && define.amd ) {
 
 
 
-
+// 加载jQuery之前已经存在一个$命名空间的库,或者jQuery命名空间的库
 var
 	// Map over jQuery in case of overwrite
-	_jQuery = window.jQuery,
+	_jQuery = window.jQuery, // 保存jQuery之前的$命名空间
 
 	// Map over the $ in case of overwrite
-	_$ = window.$;
+	_$ = window.$; // 保存jQuery之前的jQuery命名空间
 
 jQuery.noConflict = function( deep ) {
-	if ( window.$ === jQuery ) {
+	if ( window.$ === jQuery ) { // jQuery加载后，window.$就等于jQuery了，此时再把window.$还原。让出“$”控制权。
 		window.$ = _$;
 	}
 
-	if ( deep && window.jQuery === jQuery ) {
+	if ( deep && window.jQuery === jQuery ) { // deep为true时同上。让出“jQuery”控制权。
 		window.jQuery = _jQuery;
 	}
 
-	return jQuery;
+	return jQuery; // 返回jQuery
 };
 
 // Expose jQuery and $ identifiers, even in

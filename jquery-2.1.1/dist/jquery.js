@@ -3026,6 +3026,8 @@ var optionsCache = {};
 
 // Convert String-formatted options into Object-formatted ones and store in cache
 function createOptions( options ) {
+
+	// 最牛逼的是这里，object[flag] = true后，optionsCache[options]跟着object也变了，因为他们的指针指向同一个对象，但是如果这样赋值就不行 -- object = {'once': true, 'memory': true}， 因为这是覆盖。
 	var object = optionsCache[ options ] = {};
 	jQuery.each( options.match( rnotwhite ) || [], function( _, flag ) {
 		object[ flag ] = true;
@@ -3054,11 +3056,25 @@ function createOptions( options ) {
  *
  *	stopOnFalse:	interrupt callings when a callback returns false
  *
+ * 	理解观察者模式
+ *	概念：观察者也被叫作订阅者（Subscriber），它指向被观察的对象，既被观察者（Publisher 或 subject)。当事件发生时，被观察者（Publisher）就会通知观察者（subscriber）。
+ *	观察者模式的实际应用：解耦，促进代码抽象复用。
+ *	解释：ajax请求完成后的处理部分，可能还可以分为数据、逻辑、其它逻辑的处理，如果能单独抽离出来，一方面是一种解耦，另一方面实现的好的话可以做抽象复用。
+ *
+ * 
+ * 	jQuery提供的回调函数队列管理对象Callbacks结构（可以理解为jQuery中的观察者模式对象）：
+ * 	1、opitons参数缓存
+ * 	2、内部fire触发器的设计
+ * 	3、外部
+ *
+ *  $.Callbacks() 返回一个多用途的【回调函数列表对象】，提供了一些强大的方法来管理回调函数列表对象。
+ *
  */
 jQuery.Callbacks = function( options ) {
 
 	// Convert options from String-formatted to Object-formatted if needed
 	// (we check in cache first)
+	// opitons参数缓存
 	options = typeof options === "string" ?
 		( optionsCache[ options ] || createOptions( options ) ) :
 		jQuery.extend( {}, options );
@@ -3080,15 +3096,16 @@ jQuery.Callbacks = function( options ) {
 		// Stack of fire calls for repeatable lists
 		stack = !options.once && [],
 		// Fire callbacks
+		// 内部fire触发器的设计
 		fire = function( data ) {
-			memory = options.memory && data;
+			memory = options.memory && data; // 这里的options有使用，所以上边函数形参options为闭包中的变量，会保留
 			fired = true;
 			firingIndex = firingStart || 0;
-			firingStart = 0;
+			firingStart = 0; //add()之后，firingStart在这里归0
 			firingLength = list.length;
 			firing = true;
 			for ( ; list && firingIndex < firingLength; firingIndex++ ) {
-				if ( list[ firingIndex ].apply( data[ 0 ], data[ 1 ] ) === false && options.stopOnFalse ) {
+				if ( list[ firingIndex ].apply( data[ 0 ], data[ 1 ] ) === false && options.stopOnFalse ) { // stopOnFalse 的处理
 					memory = false; // To prevent further calls using add
 					break;
 				}
@@ -3096,17 +3113,18 @@ jQuery.Callbacks = function( options ) {
 			firing = false;
 			if ( list ) {
 				if ( stack ) {
-					if ( stack.length ) {
+					if ( stack.length ) { // 上边fireing结束， fire stack中的参数
 						fire( stack.shift() );
 					}
-				} else if ( memory ) {
+				} else if ( memory ) { // momory参数的处理逻辑
 					list = [];
-				} else {
+				} else { // once参数的处理
 					self.disable();
 				}
 			}
 		},
 		// Actual Callbacks object
+		// 外部
 		self = {
 			// Add a callback or a collection of callbacks to the list
 			add: function() {
@@ -3117,7 +3135,7 @@ jQuery.Callbacks = function( options ) {
 						jQuery.each( args, function( _, arg ) {
 							var type = jQuery.type( arg );
 							if ( type === "function" ) {
-								if ( !options.unique || !self.has( arg ) ) {
+								if ( !options.unique || !self.has( arg ) ) { // unique的判断
 									list.push( arg );
 								}
 							} else if ( arg && arg.length && type !== "string" ) {
@@ -3125,7 +3143,7 @@ jQuery.Callbacks = function( options ) {
 								add( arg );
 							}
 						});
-					})( arguments );
+					})( arguments ); // arguments为类数组对象，使用方式和数组类似。可以通过Array.prototype.slice.apply(arguments)将其转化为数组。	
 					// Do we need to add the callbacks to the
 					// current firing batch?
 					if ( firing ) {
@@ -3133,7 +3151,7 @@ jQuery.Callbacks = function( options ) {
 					// With memory, if we're not firing then
 					// we should call right away
 					} else if ( memory ) {
-						firingStart = start;
+						firingStart = start; //获取最后一值
 						fire( memory );
 					}
 				}
@@ -3198,9 +3216,9 @@ jQuery.Callbacks = function( options ) {
 					args = args || [];
 					args = [ context, args.slice ? args.slice() : args ];
 					if ( firing ) {
-						stack.push( args );
+						stack.push( args ); // 如果正在fireing，存储fire参数到stack中
 					} else {
-						fire( args );
+						fire( args ); // 否则直接fire
 					}
 				}
 				return this;
@@ -5202,6 +5220,13 @@ jQuery.extend({
 	}
 });
 
+
+/**
+ * append、prepend、before、after等方法的特点：
+ * 1. 参数的传递可以是HTML字符串、DOM元素、元素数组或者jQuery对象
+ * 2. 为了优化性能针对节点的处理需要生成文档碎片
+ * 因为上边两个特点是共性的，所以提取到了一个函数 domManip 中处理
+ */
 jQuery.fn.extend({
 	text: function( value ) {
 		return access( this, function( value ) {
@@ -5372,6 +5397,7 @@ jQuery.fn.extend({
 			isFunction = jQuery.isFunction( value );
 
 		// We can't cloneNode fragments that contain checked, in WebKit
+		// 多参数处理
 		if ( isFunction ||
 				( l > 1 && typeof value === "string" &&
 					!support.checkClone && rchecked.test( value ) ) ) {
@@ -5384,6 +5410,7 @@ jQuery.fn.extend({
 			});
 		}
 
+		// 生成文档碎片
 		if ( l ) {
 			fragment = jQuery.buildFragment( args, this[ 0 ].ownerDocument, false, this );
 			first = fragment.firstChild;

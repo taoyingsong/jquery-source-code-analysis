@@ -640,6 +640,7 @@ var i,
 	// Regular expressions
 
 	// Whitespace characters http://www.w3.org/TR/css3-selectors/#whitespace
+	// 空白
 	whitespace = "[\\x20\\t\\r\\n\\f]",
 	// http://www.w3.org/TR/css3-syntax/#characters
 	characterEncoding = "(?:\\\\.|[\\w-]|[^\\x00-\\xa0])+",
@@ -670,7 +671,10 @@ var i,
 	// Leading and non-escaped trailing whitespace, capturing some non-whitespace characters preceding the latter
 	rtrim = new RegExp( "^" + whitespace + "+|((?:^|[^\\\\])(?:\\\\.)*)" + whitespace + "+$", "g" ),
 
+	// 分组
 	rcomma = new RegExp( "^" + whitespace + "*," + whitespace + "*" ),
+
+	// 关系符
 	rcombinators = new RegExp( "^" + whitespace + "*([>+~]|" + whitespace + ")" + whitespace + "*" ),
 
 	rattributeQuotes = new RegExp( "=" + whitespace + "*([^\\]'\"]*?)" + whitespace + "*\\]", "g" ),
@@ -678,7 +682,7 @@ var i,
 	rpseudo = new RegExp( pseudos ),
 	ridentifier = new RegExp( "^" + identifier + "$" ),
 
-	matchExpr = {
+	matchExpr = { // 元素的匹配器，通过一系列的正则抽出表达式中的内容。
 		"ID": new RegExp( "^#(" + characterEncoding + ")" ),
 		"CLASS": new RegExp( "^\\.(" + characterEncoding + ")" ),
 		"TAG": new RegExp( "^(" + characterEncoding.replace( "w", "w*" ) + ")" ),
@@ -821,6 +825,7 @@ function Sizzle( selector, context, results, seed ) {
 			// We can work around this by specifying an extra ID on the root
 			// and working up from there (Thanks to Andrew Dupont for the technique)
 			// IE 8 doesn't work on object elements
+			// 这部分是对Element.querySelectorAll的兼容处理
 			if ( nodeType === 1 && context.nodeName.toLowerCase() !== "object" ) {
 				groups = tokenize( selector );
 
@@ -1534,14 +1539,14 @@ Expr = Sizzle.selectors = {
 
 	find: {},
 
-	relative: {
+	relative: { // js语法的方式表明符号的含义。里边定义了一个first属性，用来标识两个节点的“紧密”程度，例如父子关系和临近兄弟关系就是紧密的。
 		">": { dir: "parentNode", first: true },
 		" ": { dir: "parentNode" },
 		"+": { dir: "previousSibling", first: true },
 		"~": { dir: "previousSibling" }
 	},
 
-	preFilter: {
+	preFilter: { // Expr.preFilter保留了3个兼容处理分别是ATTR，CHILD，PSEUDO复杂的选择器。
 		"ATTR": function( match ) {
 			match[1] = match[1].replace( runescape, funescape );
 
@@ -2002,6 +2007,12 @@ function setFilters() {}
 setFilters.prototype = Expr.filters = Expr.pseudos;
 Expr.setFilters = new setFilters();
 
+/**
+ * 在不支持高级API的浏览器中，必须要干的一件事，
+ * 把复杂选择器按照一样的设计规则，分解成浏览器原始API能够识别的结构，然后通过其他的方法找个这个结构。
+ *
+ * 下边为引入的切割的算法，类似编译原理的词法分析。
+ */
 tokenize = Sizzle.tokenize = function( selector, parseOnly ) {
 	var matched, match, tokens, type,
 		soFar, groups, preFilters,
@@ -2015,11 +2026,29 @@ tokenize = Sizzle.tokenize = function( selector, parseOnly ) {
 	groups = [];
 	preFilters = Expr.preFilter;
 
+	/**
+	 * 对于soFar最终的分解结构类似下边这样：(当然为什么是这样的结构，这是sizzle内部的一个解析规则罢了)
+		groups: [
+		  tokens: {
+		  	value: "div",
+		  	type: "TAG",
+		  	matches: ["div", index: 0, input: "div,input"]
+		  },
+		  tokens: {
+		  	value: "input",
+		  	type: "TAG",
+		  	matches: ["input", index: 0, input: "input"]
+		  }
+		]
+	 */
 	while ( soFar ) {
 
 		// Comma and first run
+		// 第一大块，分组逗号（常规的思路使用split分，但是sizzle不是）
+		// 查找soFar最左边的选择是不是逗号开头
+		// matched用于处理首次进入(首次进入soFar最左侧没有逗号)
 		if ( !matched || (match = rcomma.exec( soFar )) ) {
-			if ( match ) {
+			if ( match ) { // 如果是逗号
 				// Don't consume trailing commas as valid
 				soFar = soFar.slice( match[0].length ) || soFar;
 			}
@@ -2029,6 +2058,7 @@ tokenize = Sizzle.tokenize = function( selector, parseOnly ) {
 		matched = false;
 
 		// Combinators
+		// 第二大块，层级关系( >, +, 空格, ~ )
 		if ( (match = rcombinators.exec( soFar )) ) {
 			matched = match.shift();
 			tokens.push({
@@ -2040,9 +2070,10 @@ tokenize = Sizzle.tokenize = function( selector, parseOnly ) {
 		}
 
 		// Filters
+		// 第三大块，每种元素处理
 		for ( type in Expr.filter ) {
 			if ( (match = matchExpr[ type ].exec( soFar )) && (!preFilters[ type ] ||
-				(match = preFilters[ type ]( match ))) ) {
+				(match = preFilters[ type ]( match ))) ) { // 解析出来的的七类型 -- TAG、>、TAG、CLASS、"空格"、"TAG"、ATTR
 				matched = match.shift();
 				tokens.push({
 					value: matched,
@@ -2079,6 +2110,7 @@ function toSelector( tokens ) {
 	return selector;
 }
 
+// 循环遍历识别选择器中每层的元素, 递归出可以处理的元素再进行操作。 //找到第一个亲密的节点，立马就用终极匹配器判断这个节点是否符合前面的规则。
 function addCombinator( matcher, combinator, base ) {
 	var dir = combinator.dir,
 		checkNonElements = base && dir === "parentNode",
@@ -2132,18 +2164,19 @@ function addCombinator( matcher, combinator, base ) {
 		};
 }
 
-function elementMatcher( matchers ) {
+function elementMatcher( matchers ) { // 上边filter（有"TAG"、"CLASS"等闭包的那个）为最小处理单元，这里为基于最小单元组合的集中处理站
 	return matchers.length > 1 ?
 		function( elem, context, xml ) {
 			var i = matchers.length;
-			while ( i-- ) {
+			while ( i-- ) { // 对每个种子（seed）元素尝试匹配selector，matchers是为selector定制的有序匹配数组，若按照数组顺序都能匹配上，就匹配成功，否则失败
 				if ( !matchers[i]( elem, context, xml ) ) {
 					return false;
 				}
 			}
 			return true;
 		} :
-		matchers[0];
+		//单个匹配器的话就返回自己即可
+		matchers[0]; // 这个也是个函数，为上边filter中的某一个
 }
 
 function multipleContexts( selector, contexts, results ) {
@@ -2269,6 +2302,7 @@ function setMatcher( preFilter, selector, matcher, postFilter, postFinder, postS
 	});
 }
 
+// 传入选择器，js中进行识别
 function matcherFromTokens( tokens ) {
 	var checkContext, matcher, j,
 		len = tokens.length,
@@ -2291,7 +2325,7 @@ function matcherFromTokens( tokens ) {
 		} ];
 
 	for ( ; i < len; i++ ) {
-		if ( (matcher = Expr.relative[ tokens[i].type ]) ) {
+		if ( (matcher = Expr.relative[ tokens[i].type ]) ) { // 对类似" "这样的元素的处理
 			matchers = [ addCombinator(elementMatcher( matchers ), matcher) ];
 		} else {
 			matcher = Expr.filter[ tokens[i].type ].apply( null, tokens[i].matches );
@@ -2461,6 +2495,10 @@ compile = Sizzle.compile = function( selector, match /* Internal Use Only */ ) {
  * @param {Element} context
  * @param {Array} [results]
  * @param {Array} [seed] A set of elements to match against
+ *
+ * 假设初始的selector为：var selector = 'div.aaron input[name=ttt]';
+ * 经过下边执行后可能就变为：div.aaron [name=ttt]，少了input
+ * results为过滤出来的input元素集合
  */
 select = Sizzle.select = function( selector, context, results, seed ) {
 	var i, tokens, token, type, find,
@@ -2496,10 +2534,10 @@ select = Sizzle.select = function( selector, context, results, seed ) {
 			token = tokens[i];
 
 			// Abort if we hit a combinator
-			if ( Expr.relative[ (type = token.type) ] ) {
+			if ( Expr.relative[ (type = token.type) ] ) { // eg. type == "ATTR"
 				break;
 			}
-			if ( (find = Expr.find[ type ]) ) {
+			if ( (find = Expr.find[ type ]) ) { // find 这里就是一个上边定义的函数
 				// Search, expanding context for leading sibling combinators
 				if ( (seed = find(
 					token.matches[0].replace( runescape, funescape ),
@@ -2507,10 +2545,10 @@ select = Sizzle.select = function( selector, context, results, seed ) {
 				)) ) {
 
 					// If seed is empty or no tokens remain, we can return early
-					tokens.splice( i, 1 );
-					selector = seed.length && toSelector( tokens );
+					tokens.splice( i, 1 ); // 删除tokens中上边使用过的那一项
+					selector = seed.length && toSelector( tokens ); // 这里的match是新生成的match数组，selector为根据新的match新拼接出来的选择器
 					if ( !selector ) {
-						push.apply( results, seed );
+						push.apply( results, seed ); // seed为Expr中的find根据参数匹配的结果
 						return results;
 					}
 
@@ -2721,6 +2759,8 @@ var rootjQuery,
 	// Strict HTML recognition (#11290: must start with <)
 	rquickExpr = /^(?:\s*(<[\w\W]+>)[^>]*|#([\w-]*))$/,
 
+	// jQuery查询(构造)的对象主要是dom元素，结果可能是单一元素，也可能是合集。
+	// 当然啦，根据API，jQuery构建的不仅仅只是DOM元素，还有 布尔值为false的值、HTML字符串、$(function(){}) 等等…
 	init = jQuery.fn.init = function( selector, context ) {
 		var match, elem;
 
@@ -2839,6 +2879,8 @@ var rparentsprev = /^(?:parents|prev(?:Until|All))/,
 	};
 
 jQuery.extend({
+
+	// jQuery对层级关系处理抽象出来的方法
 	dir: function( elem, dir, until ) {
 		var matched = [],
 			truncate = until !== undefined;
@@ -2952,6 +2994,8 @@ function sibling( cur, dir ) {
 	return cur;
 }
 
+// 我们经常需要提供一种方法顺序的用来处理聚合对象中各个元素，而又不暴露该对象的内部，这就是设计模式中的迭代器模式。
+// 迭代器(模式)除了单纯的遍历，在jQuery内部的运用最多的就是接口的抽象合并，相同功能的代码功能合并处理，如下，节约了大量的代码空间。
 jQuery.each({
 	parent: function( elem ) {
 		var parent = elem.parentNode;
@@ -3649,13 +3693,13 @@ var access = jQuery.access = function( elems, fn, key, value, chainable, emptyGe
  */
 jQuery.acceptData = function( owner ) {
 	// Accepts only:
-	//  - Node
-	//    - Node.ELEMENT_NODE -> nodeType === 1
-	//    - Node.DOCUMENT_NODE -> nodeType === 9
+	//  - Node(节点)
+	//    - Node.ELEMENT_NODE（元素节点） -> nodeType === 1
+	//    - Node.DOCUMENT_NODE（根节点） -> nodeType === 9
 	//  - Object
 	//    - Any
 	/* jshint -W018 */
-	return owner.	 === 1 || owner.nodeType === 9 || !( +owner.nodeType );
+	return owner.nodeType === 1 || owner.nodeType === 9 || !( +owner.nodeType );
 };
 
 

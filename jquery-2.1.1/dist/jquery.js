@@ -1503,8 +1503,10 @@ getText = Sizzle.getText = function( elem ) {
 
 	if ( !nodeType ) {
 		// If no nodeType, this is expected to be an array
+		// 如果没有节点类型,表示是一个数组
 		while ( (node = elem[i++]) ) {
 			// Do not traverse comment nodes
+			// 不遍历注释节点
 			ret += getText( node );
 		}
 	} else if ( nodeType === 1 || nodeType === 9 || nodeType === 11 ) {
@@ -3113,12 +3115,25 @@ function createOptions( options ) {
  *
  *  $.Callbacks() 返回一个多用途的【回调函数列表对象】，提供了一些强大的方法来管理回调函数列表对象。
  *
+ *  精简jQuery.Callbacks后，核心代码如下：
+ *  jQuery.Callbacks = function(){
+ *   var list = [],
+ *       self = {
+ *           add: function(){// 添加元素到list},
+ *           remove: function(){// 从list移除指定元素},
+ *           fire: function(){// 遍历list并触发每次元素}
+ *       };
+ *   return self; // 返回一个独立的自定义事件对象
+ * }
+ *
  */
 jQuery.Callbacks = function( options ) {
 
 	// Convert options from String-formatted to Object-formatted if needed
 	// (we check in cache first)
 	// options参数缓存
+	// eg: callback('once memory') 
+	// 		=> optionsCache['once memory'] = {once: true, memory: true}
 	options = typeof options === "string" ?
 		( optionsCache[ options ] || createOptions( options ) ) :
 		jQuery.extend( {}, options );
@@ -3138,11 +3153,15 @@ jQuery.Callbacks = function( options ) {
 		// Actual callback list
 		list = [],
 		// Stack of fire calls for repeatable lists
+		// 顾名思义，这个就是栈啦，什么用呢？当我们在执行一个回调函数的时候，
+	    // 在函数内部又触发了这个Callback对象，就用到这个stack啦。当然，如果是once模式，
+	    // 就根本不存在在某个回调函数里面再次触发这个Callback对象的情况啦，
+	    // 因此判断options.once是否为true。
 		stack = !options.once && [],
 		// Fire callbacks
 		// 内部fire触发器的设计
-		fire = function( data ) {
-			memory = options.memory && data; // 这里的options有使用，所以上边函数形参options为闭包中的变量，会保留
+		fire = function( data ) { // data为数组。data[0]为上下文；data[1]为arguments。
+			memory = options.memory && data; // 这里memory为字符串；这里的options有使用，所以上边函数形参options为闭包中的变量，会保留
 			fired = true;
 			firingIndex = firingStart || 0;
 			firingStart = 0; //add()中调用fire之后，firingStart在这里归0
@@ -3175,22 +3194,28 @@ jQuery.Callbacks = function( options ) {
 				if ( list ) {
 					// First, we save the current length
 					var start = list.length;
+
+					// 添加add的args到list队列
 					(function add( args ) {
 						jQuery.each( args, function( _, arg ) {
 							var type = jQuery.type( arg );
 							if ( type === "function" ) {
-								if ( !options.unique || !self.has( arg ) ) { // 如果不是unique或者没有参数
+								if ( !options.unique || !self.has( arg ) ) { // 如果没设置unique 或者 设置了unique但是arg函数不在list中
 									list.push( arg );
 								}
 							} else if ( arg && arg.length && type !== "string" ) {
 								// Inspect recursively
+								// 递归检查
 								add( arg );
 							}
 						});
 					})( arguments ); // arguments为类数组对象，使用方式和数组类似。可以通过Array.prototype.slice.apply(arguments)将其转化为数组。	
 					// Do we need to add the callbacks to the
 					// current firing batch?
-					if ( firing ) {
+					// 按理说添加回调函数的工作已经完成了，但还有需要特殊处理的场景：
+                    // 如果add()方法是在某个回调函数中被调用，
+                    // 则需要将当前添加的回调函数添加到本次触发的队列里
+					if ( firing ) { // 还不太清楚这里为什么要有这样一个保护机制？？如果能执行到这里虽然结束了，但是上边的fire在继续执行，所以下边变更的参数时可以生效的
 						firingLength = list.length;
 					// With memory, if we're not firing then
 					// we should call right away
@@ -3258,11 +3283,15 @@ jQuery.Callbacks = function( options ) {
 			fireWith: function( context, args ) {
 				if ( list && ( !fired || stack ) ) {
 					args = args || [];
-					args = [ context, args.slice ? args.slice() : args ];
+					args = [ context, args.slice ? args.slice() : args ]; // arguments不存在slice, 所以args不存在slice， 此时args.slice ? args.slice() : args还是arguments
+					
+					// 这里判断firing是因为有可能在回调函数中，有可能再次调用self.fire()函数
+                    // 这时，jQuery选择先将外层的调用先执行完，将回调函数中调用的self.fire()
+                    // 的参数放入stack中，等待外层的调用执行完毕，再执行内层的self.fire()调用
 					if ( firing ) {
-						stack.push( args ); // 如果正在fireing，存储fire参数到stack中
+						stack.push( args ); // 如果正在fireing，存储fire参数到stack中。// 还不太清楚这里为什么要有这样一个保护机制？？如果能执行到这里虽然结束了，但是上边的fire在继续执行，所以下边变更的参数时可以生效的
 					} else {
-						fire( args ); // 否则直接fire
+						fire( args ); // 否则直接fire。 args为数组，args[0]为context即调用时的callbacks对像，args[1]为arguments
 					}
 				}
 				return this;
@@ -3334,44 +3363,62 @@ jQuery.Callbacks = function( options ) {
 	回调函数的执行顺序和它们被添加的顺序是一样的。传递给 deferred.resolve() 的 args 参数，会传给每个回调函数。
 	当延迟对象进入 resolved 状态后，再添加的任何 doneCallbacks，当它们被添加时，就会被立刻执行，并带上传入给 .resolve()的参数。
 
+	整体架构上，如果你了解设计模式中的工厂模式，那么不难看出，jQuery.Deferred就是一个工厂，每次执行jQuery.Deferred时，都会返回一个加工好的deferred对象。
+
 */
 jQuery.extend({
 
 	Deferred: function( func ) { // Deferred是个工厂类，返回的是内部构建的deferred对象
 		var tuples = [
-				// action, add listener, listener list, final state
+				// action, add listener, listener list, final state // 为每个状态提供一个独立的空间来添加、删除以及触发事件。
 				[ "resolve", "done", jQuery.Callbacks("once memory"), "resolved" ],
 				[ "reject", "fail", jQuery.Callbacks("once memory"), "rejected" ],
 				[ "notify", "progress", jQuery.Callbacks("memory") ]
 			],
-			state = "pending",
-			promise = {
-				state: function() {
+			state = "pending", // state就是deferred对象的状态值
+			promise = { // promise就是一个拥有state、always、then、promise方法的对象
+				state: function() { //返回状态值
 					return state;
 				},
-				always: function() {
+				always: function() { //不管成功还是失败，最终都会执行该方法
 					deferred.done( arguments ).fail( arguments );
 					return this;
 				},
 
-				// 所以整个then方法就处理了2个事情
-				// 1. 构建一个新的deferred对象，返回受限的promise对象
-				// 2. 给父deferred对象的[ done | fail | progress ]方法都增加一个过滤函数的方法
+				/* 精简promise.then的源码如下：
+				   可以清晰的看出，promise.then方法最后通过jQuery.Deferred返回了一个新的受限制的deferred对象，即deferred.promise，
+				   正因为这样，所以执行完then方法后，我们是不能通过deferred.pomise手动触发resolve、reject或notify的。
+
+					promise = {
+					    then: function(  ) {   
+					        var fns = arguments;
+					        return jQuery.Deferred( function( newDefer ) {
+					                   ...
+					               } ).promise();
+					    }
+					}
+
+				 所以整个then方法就处理了2个事情
+				 1. 构建一个新的deferred对象，返回受限的promise对象
+				 2. 给父deferred对象的[ done | fail | progress ]方法都增加一个过滤函数的方法 */
 				then: function( /* fnDone, fnFail, fnProgress */ ) {
 					var fns = arguments;
-					return jQuery.Deferred(function( newDefer ) { // 这里jQuery.Deferred(func) 在做递归，虽然在做递归，所有的done、fail方法还是存入了同一个作用域的deferred中。newDefer是上一层的deferred对象
+					return jQuery.Deferred(function( newDefer ) { //执行下边的if(func) {func.call( deferred, deferred );} 这里jQuery.Deferred(func)。promise.then方法中的newDefer指向通过这里的jQuery.Deferred构建好的deferred。
 						jQuery.each( tuples, function( i, tuple ) {
 							var fn = jQuery.isFunction( fns[ i ] ) && fns[ i ];
 							// deferred[ done | fail | progress ] for forwarding actions to newDefer
 							// 下边deferred其实就是根级父对象的引用,所以就嵌套再深,其实都是调用了父对象deferred[ done | fail | progress 执行add罢了
 							deferred[ tuple[1] ](function() { // 2. 给父deferred对象的[ done | fail | progress ]方法都增加(add)一个过滤函数的方法。
 								var returned = fn && fn.apply( this, arguments ); // 执行then传入的函数
-								if ( returned && jQuery.isFunction( returned.promise ) ) { // 如果then回调函数返回的是一个deferred对象，return_referred对象的三个回调函数列表中添加new_deferred的resolve 、 reject 、 notify方法,也就是说new_deferrred的执行依赖return_deferred的状态
+
+								// 如果then中执行后返回的是一个Deffered对象，在返回的deferred中add进resolve（即fire的方法），这样如果父被fire了，就会执行这里，这里即then的回调（执行结果为deffered对象）为子deferred，子deferred执行结束(resolve)后执行这里的add进的东西。
+								// 如果then中的执行结果不会deffered对象，执行else中逻辑，直接fire，然后返回deffered对象，进而支持then的连续调用。
+								if ( returned && jQuery.isFunction( returned.promise ) ) { // 如果then回调函数返回的是一个deferred对象，return_referred对象的三个回调函数列表中添加newDefer的resolve 、 reject 、 notify方法,也就是说newDefer的执行依赖return_deferred的状态
 									returned.promise()
 										.done( newDefer.resolve )
 										.fail( newDefer.reject )
-										.progress( newDefer.notify );
-								} else { // 如果then回调函数返回的是一个非deferred对象(如值为undefined或者null等)，不是函数的情况（如值为undefined或者null等），直接链接到new_deferred的resolve、reject、notify方法，也就是说  new_deferrred的执行依赖外层的调用者deferred的状态或者说是执行动作（resolve还是reject或者是notify）  此时deferred.then()相当于将自己的callbacklist和new_deferred的callbacklist连接起来
+										.progress( newDefer.notify );// 在父的deferred中add进子deferred（即newDefer）的resolve（即fire的方法），这样如果父被fire了，子也会紧接着被fire，就是说$.Deferred()执行结束后是then就开始执行then中的代码了
+								} else { // 如果then回调函数返回的是一个非deferred对象(如值为undefined或者null或者string、number等)，不是函数的情况，直接链接到newDefer的resolve、reject、notify方法，也就是说  newDefer的执行依赖外层的调用者deferred的状态或者说是执行动作（resolve还是reject或者是notify）  此时deferred.then()相当于将自己的callbacklist和newDefer的callbacklist连接起来
 									newDefer[ tuple[ 0 ] + "With" ]( this === promise ? newDefer.promise() : this, fn ? [ returned ] : arguments );
 								}
 							});
@@ -3381,7 +3428,7 @@ jQuery.extend({
 				},
 				// Get a promise for this deferred
 				// If obj is provided, the promise aspect is added to the object
-				promise: function( obj ) {
+				promise: function( obj ) { 
 					return obj != null ? jQuery.extend( obj, promise ) : promise;
 				}
 			},
@@ -3391,30 +3438,41 @@ jQuery.extend({
 		promise.pipe = promise.then;
 
 		// Add list-specific methods
+		// 总结 each做了什么：
+		// 通过jQuery.each遍历tuples，将tuples里的三种状态操作值done、fail以及progress添加到promise对象，并分别指向各自自定义对象中的add方法。
+		// 如果状态为resolved或rejected，那么，再将三个特定函数添加到各自自定义对象的list列表下。随后，就是对deferred对象赋予三个状态各自的触发事件啦。
 		jQuery.each( tuples, function( i, tuple ) {
-			var list = tuple[ 2 ], // done或fail或progress的回调对象$.Callbacks()
-				stateString = tuple[ 3 ];
+			var list = tuple[ 2 ], // tuple中的 回调队列对象
+				stateString = tuple[ 3 ]; // "resolved","rejected",undefined
 
 			// promise[ done | fail | progress ] = list.add
 			// 即
-			// promise.done = $.Callbacks("once memory").add
-			// promise.fail = $.Callbacks("once memory").add
-			// promise.progress = $.Callbacks("memory").add
+			// promise[done] = $.Callbacks("once memory").add
+			// promise[fail] = $.Callbacks("once memory").add
+			// promise[progress] = $.Callbacks("memory").add
 			promise[ tuple[1] ] = list.add;
 
 			// Handle state
-			// changeState 即下边if中第一个回调，改变状态的匿名函数，deferred的状态，分为三种：pending(初始状态), resolved(解决状态), rejected(拒绝状态)
-			// 不论deferred对象最终是resolve（还是reject），在首先改变对象状态之后，都会disable另一个函数列表reject_list(或者resolve_list)
-			// 然后lock progress_list保持其状态，最后执行剩下的之前add进回调的回调函数
-			if ( stateString ) { // 对于tuples中存在deferred最终状态的数组项
-				list.add(function() { // 预先向done或fail的$.Callbacks()添加三个回调函数
-					// state = [ resolved | rejected ]
+			/*
+				判断stateString值，如果为’resolved’或’rejected’状态，那么就添加三个事件函数到对应的list列表中
+				--改变state状态的函数
+				--禁止对应状态的处理，如’resolved’后，那么必定不会触发rejected状态咯，反之亦然
+				--禁止pending状态，都’resolved’或者’rejected’了，那么deferred肯定不会处于pending状态咯
+			 */
+			if ( stateString ) {
+				list.add(function() {
 					state = stateString;
 
 				// [ reject_list | resolve_list ].disable; progress_list.lock
 				}, tuples[ i ^ 1 ][ 2 ].disable, tuples[ 2 ][ 2 ].lock ); // i ^ 1 按位异或运算符，所以实际上第二个传参数是1、0索引对调了，所以取值是reject_list.disable与resolve_list.disable
 			}
 
+			/*
+				为对象deferred，添加触发各自状态（’resolved’,’rejected’,’pending’）的fire相关方法：
+				--resolve、resolveWith
+				--reject、rejectWith
+				--notify、notifyWith
+			 */
 			// deferred[ resolve | reject | notify ]
 			deferred[ tuple[0] ] = function() { // 这个方法的内容参考Callback中的fire，是类似的。
 				deferred[ tuple[0] + "With" ]( this === deferred ? promise : this, arguments );
@@ -3424,11 +3482,11 @@ jQuery.extend({
 		});
 
 		// Make the deferred a promise
-		promise.promise( deferred ); // 看上边promise.promise源码，此处把primise扩展到deferred对象，进而生成最终的deferred对象
+		promise.promise( deferred ); // 扩展deferred对象，让原来只有6个触发属性的deferred，同时拥有了promise对象的全部属性。
 
 		// Call given func if any
 		if ( func ) { // 调用$.Deferred()时若有参数func
-			func.call( deferred, deferred );
+			func.call( deferred, deferred ); // 值得注意的是，是将deferred作为func的执行对象以及执行参数的，这一点在promise.then中体现得淋淋尽致。
 		}
 
 		// All done!
@@ -3591,24 +3649,40 @@ jQuery.ready.promise();
 // Multifunctional method to get and set values of a collection
 // The value/s can optionally be executed if it's a function
 /**
+ * 获取和设置集合值的多功能方法
+ * 如果是函数，可以选择执行值
+ * 针对参数的多形式 jquery 会通过一个 jQuery.access 方法过滤这些参数，原理就是针对字符串、数组、对象的一个遍历而已。
+ *
  * attr: function (name, value) { // 搜 jQuery.attr 可以搜到，这是一个jQuery扩展函数
  *    return jQuery.access(this, jQuery.attr, name, value, arguments.length > 1); // this为上边attr的调用者，即jQuery选中元素
  * },
  *
  * 
  * @param  {[type]}   elems     [要循环的jQuery选中的节点集合]
- * @param  {Function} fn        [需要对节点进行操作的函数]
- * @param  {[type]}   key       [属性名，例如 $('#test').height(); 这里的 height(字符串)]
+ * @param  {Function} fn        [需要对节点进行操作的函数]这个是理解下边代码的关键，可以参考attr的access调用
+ * @param  {[type]}   key       [属性名，例如 $('#test').height(); 这里的 height字符串]
  * @param  {[type]}   value     [值，例如 $('#test').height(100); 中的 100]
  * @param  {[type]}   chainable [是否链式执行，如果是get动作，为false，如果是set动作，为true，对于 get 类方法，我们会获得一个返回值，例如字符串、数字等等，这时候是不需要链式执行的，而对于 set 类方法，通常需要如此，例如：$('#test').height(100).width(100).css('color', 'red');]
  * @param  {[type]}   emptyGet  [jQuery选中的节点集合中没有元素时返回的默认值]
  * @param  {[type]}   raw       [raw 为 false，表明 value 是个函数，你经常会在 jQuery 的 API 中看到参数可以为函数，例如.height( function(index, height) )]
  * @return {[type]}             [description]
+ *
+ *
+ * 思路：
+ * 1.首先判断key值是不是一个object，如果是，遍历key，递归调用jQuery.access，并将是否可以链式调用的标志位设置为true，【set操作】
+ * 2.判断value值是否已经定义，如果已经定义，说明是个【set操作】
+ * 	  2.1 set操作的是可链式调用的
+ *    2.2 如果value不是function，设置raw为true
+ *    2.3 判断key值是否为null或者undefined，key若为空值 // 这里里边的操作感觉没有实际作用,,,可能就是为了不报错吧。。。
+ *        2.3.1 如果value不是个函数，或者强制赋值raw为true，那么调用fn，可能是以下调用：$('#box').attr(null,{abc:'def',a:'1'})
+ *        2.3.1 如果value是个函数，将fn包装之，改变原来fn的作用域和参数
+ *    2.4 如果fn存在，遍历jQuery内部元素，分别【执行set操作】
+ * 3.首先判断是否为set方法，如果是，返回 elems，如果不是执行【get操作】（如果jQuery内部length为0，返回指定的默认空值）
  */
 var access = jQuery.access = function( elems, fn, key, value, chainable, emptyGet, raw ) {
 	var i = 0,
 		len = elems.length,
-		bulk = key == null;
+		bulk = key == null; 
 
 	// Sets many values
 	// 如果参数key是对象，表示要设置多个属性。eg. $('#box').attr({data:1,def:'addd'});
@@ -3631,7 +3705,7 @@ var access = jQuery.access = function( elems, fn, key, value, chainable, emptyGe
 		if ( bulk ) { // if (key == null && value !== undefined) eg: $('#box').attr(undefined,'abc')
 			// Bulk operations run against the entire set
 			if ( raw ) { // if value不是个函数 jQuery.attr.call(elems,value); 调用完毕之后，将fn设置为空
-				fn.call( elems, value );
+				fn.call( elems, value ); // 有elems,有value但是没有key,追代码感觉啥也不会做，就是不让报错，，，
 				fn = null;
 
 			// ...except when executing function values
@@ -3647,8 +3721,8 @@ var access = jQuery.access = function( elems, fn, key, value, chainable, emptyGe
              */
 			} else { //else value是个函数，这里的bulk是为了节省一个变量，将fn用bulk存起来，然后封装fn的调用
 				bulk = fn;
-				fn = function( elem, key, value ) { // 这里只是函数的定义，参数是下边调用时传递的
-					return bulk.call( jQuery( elem ), value );
+				fn = function( elem, key, value ) { // 把原来的fn包装了一下，这里只是函数的定义，参数是下边调用时传递的
+					return bulk.call( jQuery( elem ), value ); // 这样调用有相应的处理方式，不会报错，但是感觉这个没有结果
 				};
 			}
 		}
@@ -3665,7 +3739,7 @@ var access = jQuery.access = function( elems, fn, key, value, chainable, emptyGe
                      *  先调用jQuery.attr(elements[i],key) 取到当前的值,然后调用传入的fn值
                      * });
                      */
-					value.call( elems[i], i, fn( elems[i], key ) ) ); // 这个fn的调用其实就是给ele设置值，fn方法在下边定义着
+					value.call( elems[i], i, fn( elems[i], key ) ) ); // 回调函数处理一下value后再使用。这个fn的调用其实就是给ele设置值，fn方法为参数中的或者上边定义的
 			}
 		}
 	}
@@ -3690,6 +3764,7 @@ var access = jQuery.access = function( elems, fn, key, value, chainable, emptyGe
 
 /**
  * Determines whether an object can have data
+ * 如果是object缓存会存储在object的data上，否则存储在jquery的cache中
  */
 jQuery.acceptData = function( owner ) {
 	// Accepts only:
@@ -3733,17 +3808,23 @@ Data.accepts = jQuery.acceptData;
 
 
 Data.prototype = { // Data的原型
-	key: function( owner ) {
+	key: function( owner ) { // 看到是在下边set中调用的，下边set是在jquery扩展的data函数中通过Data对象调用的
 		// We can accept data for non-element nodes in modern browsers,
 		// but we should not, see #8335.
 		// Always return the key for a frozen object.
-		if ( !Data.accepts( owner ) ) { // 如果owner是jQuery对象，return 0;
+		// 	检测是否可以存放钥匙
+		if ( !Data.accepts( owner ) ) {
 			return 0;
 		}
 
 		var descriptor = {},
 			// Check if the owner object already has a cache key
-			unlock = owner[ this.expando ];
+			/* 这个方法是一个Data实例调用的，所以this指向Data实例，实例结构如下：
+				cache:{}
+			    expando:"jQuery2110490254502567205150.4135821029846254"
+			    __proto__:Object 
+			 */
+			unlock = owner[ this.expando ]; 
 
 		// If not, create one
 		if ( !unlock ) { // 如果【dom元素】（注意不是jQuery对象元素	）没有unlock，创建unloack并用defineProperties写入dom元素的value上，此时这个新增的unlock值在浏览器页面的html中是看不到的
@@ -3784,9 +3865,11 @@ Data.prototype = { // Data的原型
 		// Handle: [ owner, { properties } ] args
 		} else {
 			// Fresh assignments by object are shallow copied
-			if ( jQuery.isEmptyObject( cache ) ) {
+			// 对象的新分配被浅拷贝
+			if ( jQuery.isEmptyObject( cache ) ) { // 不太明白这个和下边的区别是什么？？？
 				jQuery.extend( this.cache[ unlock ], data );
 			// Otherwise, copy the properties one-by-one to the cache object
+			// 否则，将这些属性逐个复制到缓存对象
 			} else {
 				for ( prop in data ) {
 					cache[ prop ] = data[ prop ];
@@ -5980,6 +6063,7 @@ var
 	cssPrefixes = [ "Webkit", "O", "Moz", "ms" ];
 
 // return a css property mapped to a potentially vendor prefixed property
+// 返回一个css属性映射到一个浏览器商前缀的属性
 function vendorPropName( style, name ) {
 
 	// shortcut for names that are not vendor prefixed
@@ -6244,10 +6328,20 @@ jQuery.extend({
 	},
 
 	css: function( elem, name, extra, styles ) {
+		/* 所以总结 jquery.css 的接口其实也很简单。
+			1.转化样式命名
+			2.处理特殊的属性比如float
+			3.分离出一个钩子，用于处理跟尺寸有关的属性
+			4.其余元素采用getComputedStyle获取对应的值
+		 */
+
+
 		var val, num, hooks,
-			origName = jQuery.camelCase( name );
+			origName = jQuery.camelCase( name ); //转成驼峰写法
 
 		// Make sure that we're working with the right name
+		// 如果是特殊属性float转成cssFloat
+		// 带有浏览器前缀处理
 		name = jQuery.cssProps[ origName ] || ( jQuery.cssProps[ origName ] = vendorPropName( elem.style, origName ) );
 
 		// gets hook for the prefixed version
@@ -6260,6 +6354,7 @@ jQuery.extend({
 		}
 
 		// Otherwise, if a way to get the computed value exists, use that
+		// 通过computed接口直接获取样式
 		if ( val === undefined ) {
 			val = curCSS( elem, name, styles );
 		}
@@ -6348,6 +6443,8 @@ jQuery.each({
 });
 
 jQuery.fn.extend({
+
+	// css 参数的处理也跟之前的 attr 属性的处理保持一致，采用了jQuery.access 方法统一调配，这个具体之前就分析了，无非就是递归参数，但是有个可学的设计思路，分离不同的逻辑判断通过回调传递进去。
 	css: function( name, value ) {
 		return access( this, function( elem, name, value ) {
 			var styles, len,
@@ -7411,6 +7508,12 @@ var rclass = /[\t\r\n\f]/g;
 
 jQuery.fn.extend({
 	addClass: function( value ) {
+		/**
+		 * 分解class为数组
+		 * 元素上的class和这个class比较，去重复
+		 * 再合并class为一个字符串
+		 * 将class字符串添加到元素上
+		 */
 		var classes, elem, cur, clazz, j, finalValue,
 			proceed = typeof value === "string" && value,
 			i = 0,
@@ -7454,6 +7557,9 @@ jQuery.fn.extend({
 	},
 
 	removeClass: function( value ) {
+		/**
+		 * 和上边addClass处理流程类似，不同的是：上边的class是加，这里的是减
+		 */
 		var classes, elem, cur, clazz, j, finalValue,
 			proceed = arguments.length === 0 || typeof value === "string" && value,
 			i = 0,

@@ -1,4 +1,4 @@
 # jquery-source-code-analysis
 jquery 源码分析
 
-注释都在dist文件的jquery.js中写着
+注意：注释现在都在dist文件的jquery.js文件中
